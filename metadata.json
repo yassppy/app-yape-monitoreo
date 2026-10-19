@@ -1,0 +1,6 @@
+{
+  "name": "Yape Monitor",
+  "description": "Monitoreo en segundo plano de notificaciones de Yape con alertas inmediatas y envío en tiempo real a API FastAPI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
