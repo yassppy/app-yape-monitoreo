@@ -1,9 +1,14 @@
 package com.example.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +31,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lan
@@ -57,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -66,7 +73,6 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.UiState
-import com.example.ui.components.FastApiCodeDialog
 import com.example.ui.theme.StatusFailed
 import com.example.ui.theme.StatusSuccess
 import com.example.ui.theme.YapePurple
@@ -79,13 +85,13 @@ fun FastApiConfigScreen(
     onSaveToken: (String) -> Unit = {},
     onSaveConfig: (String, String) -> Unit = { _, _ -> },
     onToggleFastApiSync: (Boolean) -> Unit,
-    onTestConnection: (String?, String?) -> Unit = { _, _ -> }
+    onTestConnection: (String?, String?) -> Unit = { _, _ -> },
+    onDismissTestResult: () -> Unit = {}
 ) {
     var urlInput by remember(uiState.webhookUrl) { mutableStateOf(uiState.webhookUrl) }
     var tokenInput by remember(uiState.authToken) { mutableStateOf(uiState.authToken) }
     var isPasswordVisible by remember { mutableStateOf(false) }
     var showSavedMessage by remember { mutableStateOf(false) }
-    var showCodeDialog by remember { mutableStateOf(false) }
 
     val presetUrls = listOf(
         "http://192.168.1.50:8000/webhook/yape" to "/webhook/yape",
@@ -380,62 +386,119 @@ fun FastApiConfigScreen(
             }
         }
 
-        // Test Result Box
+        // Test Result Box (with direct dismiss & copy error for dev)
         if (uiState.testResult != null) {
             item {
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
+                val isSuccess = uiState.testResult.isSuccess
+                val context = LocalContext.current
+
+                val errorReport = remember(uiState.testResult, uiState.webhookUrl) {
+                    buildString {
+                        appendLine("🚨 [Yape Monitor - Error Webhook FastAPI]")
+                        appendLine("• URL Destino: ${uiState.webhookUrl.ifBlank { "(No configurada)" }}")
+                        if (uiState.testResult.httpCode != null) {
+                            appendLine("• Código HTTP: ${uiState.testResult.httpCode}")
+                        }
+                        appendLine("• Latencia: ${uiState.testResult.latencyMs} ms")
+                        if (!uiState.testResult.errorMessage.isNullOrBlank()) {
+                            appendLine("• Error: ${uiState.testResult.errorMessage}")
+                        }
+                        if (!uiState.testResult.responseBody.isNullOrBlank()) {
+                            appendLine("• Respuesta Servidor:")
+                            appendLine(uiState.testResult.responseBody)
+                        }
+                    }
+                }
+
                 Card(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = if (uiState.testResult.isSuccess) {
+                        containerColor = if (isSuccess) {
                             StatusSuccess.copy(alpha = 0.12f)
                         } else {
                             StatusFailed.copy(alpha = 0.12f)
                         }
                     ),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(
+                            1.dp,
+                            if (isSuccess) StatusSuccess.copy(alpha = 0.4f) else StatusFailed.copy(alpha = 0.4f),
+                            RoundedCornerShape(14.dp)
+                        )
+                        .testTag("fastapi_test_result_card")
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
                             Icon(
-                                imageVector = if (uiState.testResult.isSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
+                                imageVector = if (isSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
                                 contentDescription = null,
-                                tint = if (uiState.testResult.isSuccess) StatusSuccess else StatusFailed,
-                                modifier = Modifier.size(20.dp)
+                                tint = if (isSuccess) StatusSuccess else StatusFailed,
+                                modifier = Modifier.size(22.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (uiState.testResult.isSuccess) {
-                                    "¡Respuesta exitosa! HTTP ${uiState.testResult.httpCode}"
-                                } else {
-                                    "Fallo de conexión"
-                                },
-                                fontWeight = FontWeight.Bold,
-                                color = if (uiState.testResult.isSuccess) StatusSuccess else StatusFailed
-                            )
-                            Spacer(modifier = Modifier.weight(1f))
-                            Text(
-                                text = "${uiState.testResult.latencyMs} ms",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (isSuccess) {
+                                        "¡Conexión exitosa! HTTP ${uiState.testResult.httpCode}"
+                                    } else {
+                                        "Error / Falla en Webhook"
+                                    },
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = if (isSuccess) StatusSuccess else StatusFailed
+                                )
+                                Text(
+                                    text = "${uiState.testResult.latencyMs} ms",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            // Dismiss button right here in the FastAPI screen
+                            IconButton(
+                                onClick = onDismissTestResult,
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .testTag("dismiss_webhook_result_icon")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Quitar mensaje de error",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
 
-                        if (!uiState.testResult.isSuccess && uiState.testResult.errorMessage != null) {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = uiState.testResult.errorMessage,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = StatusFailed
-                            )
+                        if (!isSuccess && !uiState.testResult.errorMessage.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Card(
+                                shape = RoundedCornerShape(8.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF2A151D)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = uiState.testResult.errorMessage,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = Color(0xFFFF8595),
+                                    modifier = Modifier.padding(10.dp)
+                                )
+                            }
                         }
 
                         if (!uiState.testResult.responseBody.isNullOrBlank()) {
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Respuesta JSON recibida de FastAPI:",
+                                text = "Respuesta del servidor:",
                                 fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Card(
@@ -447,9 +510,55 @@ fun FastApiConfigScreen(
                                     text = uiState.testResult.responseBody,
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 11.sp,
-                                    color = Color(0xFFA6E3A1),
+                                    color = if (isSuccess) Color(0xFFA6E3A1) else Color(0xFFFFB4AB),
                                     modifier = Modifier.padding(8.dp)
                                 )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Action Buttons: Copy error message for dev & Dismiss message from here
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (!isSuccess) {
+                                Button(
+                                    onClick = {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        val clip = ClipData.newPlainText("Error Webhook FastAPI", errorReport)
+                                        clipboard.setPrimaryClip(clip)
+                                        Toast.makeText(context, "Error copiado para pasarle al dev", Toast.LENGTH_SHORT).show()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = StatusFailed),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("copy_webhook_error_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Copiar error al dev", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            OutlinedButton(
+                                onClick = onDismissTestResult,
+                                modifier = Modifier
+                                    .then(if (isSuccess) Modifier.fillMaxWidth() else Modifier.weight(0.7f))
+                                    .testTag("dismiss_webhook_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Quitar mensaje", fontSize = 12.sp)
                             }
                         }
                     }
@@ -457,90 +566,8 @@ fun FastApiConfigScreen(
             }
         }
 
-        // Schema description & code generator button
         item {
-            Spacer(modifier = Modifier.height(16.dp))
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Code,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Estructura del Payload JSON enviado",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(
-                        text = "Cada vez que llega un depósito, la app envía automáticamente esta carga útil a tu endpoint:",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Card(
-                        shape = RoundedCornerShape(8.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E2E)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState())
-                                .padding(10.dp)
-                        ) {
-                            Text(
-                                text = """{
-  "event": "yape_payment_received",
-  "payment_id": 1,
-  "sender": "Nombre del cliente",
-  "amount": 20.00,
-  "currency": "PEN",
-  "timestamp": 1729309440000,
-  "datetime_iso": "2026-10-18T22:44:00Z",
-  "raw_title": "Confirmación de Pago",
-  "raw_message": "Yape! ... te envió un pago por S/ 20",
-  "app_source": "com.bcp.innovacxion.yapeapp",
-  "device_name": "Xiaomi / Samsung / Pixel"
-}""",
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                color = Color(0xFFA6E3A1),
-                                lineHeight = 16.sp
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Button(
-                        onClick = { showCodeDialog = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Ver y Copiar Código FastAPI en Python")
-                    }
-                }
-            }
+            Spacer(modifier = Modifier.height(24.dp))
         }
-    }
-
-    if (showCodeDialog) {
-        FastApiCodeDialog(onDismiss = { showCodeDialog = false })
     }
 }

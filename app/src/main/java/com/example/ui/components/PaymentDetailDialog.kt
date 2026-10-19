@@ -1,5 +1,9 @@
 package com.example.ui.components
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Error
@@ -41,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -62,6 +68,7 @@ fun PaymentDetailDialog(
     onDelete: (Long) -> Unit
 ) {
     val scrollState = rememberScrollState()
+    val context = LocalContext.current
     val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
     val formattedDate = sdf.format(Date(payment.timestamp))
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -136,6 +143,47 @@ fun PaymentDetailDialog(
                             SyncStatus.PENDING -> StatusPending
                         }
                     )
+                }
+
+                // If failed, provide copyable error details
+                if (payment.syncStatus == SyncStatus.FAILED && !payment.errorMessage.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Card(
+                        shape = RoundedCornerShape(8.dp),
+                        colors = CardDefaults.cardColors(containerColor = StatusFailed.copy(alpha = 0.12f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = "Detalle del error:",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = StatusFailed
+                            )
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Text(
+                                text = payment.errorMessage,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                color = StatusFailed
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    val errReport = "🚨 Error de envío FastAPI (Pago #${payment.id}):\nRemitente: ${payment.sender}\nMonto: S/ ${payment.amount}\nError: ${payment.errorMessage}"
+                                    val clip = ClipData.newPlainText("Error Webhook Pago", errReport)
+                                    clipboard.setPrimaryClip(clip)
+                                    Toast.makeText(context, "Error copiado para pasarle al dev", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Copiar error al dev", fontSize = 12.sp)
+                            }
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))

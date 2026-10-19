@@ -279,7 +279,8 @@ class MainActivity : ComponentActivity() {
                                 onSaveUrl = { viewModel.setWebhookUrl(it) },
                                 onSaveToken = { viewModel.setAuthToken(it) },
                                 onToggleFastApiSync = { viewModel.toggleFastApiSync(it) },
-                                onTestConnection = { url, token -> viewModel.testWebhookConnection(url, token) }
+                                onTestConnection = { url, token -> viewModel.testWebhookConnection(url, token) },
+                                onDismissTestResult = { viewModel.dismissTestResult() }
                             )
 
                             NavTab.SETTINGS -> SettingsScreen(

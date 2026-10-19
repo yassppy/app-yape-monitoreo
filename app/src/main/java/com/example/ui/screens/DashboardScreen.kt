@@ -1,5 +1,9 @@
 package com.example.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,6 +32,7 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Error
@@ -60,6 +65,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -477,10 +483,30 @@ fun DashboardScreen(
         // Test connection result banner
         if (uiState.testResult != null) {
             item {
+                val isSuccess = uiState.testResult.isSuccess
+                val context = LocalContext.current
+                val errorReport = remember(uiState.testResult, uiState.webhookUrl) {
+                    buildString {
+                        appendLine("🚨 [Yape Monitor - Error Webhook FastAPI]")
+                        appendLine("• URL Destino: ${uiState.webhookUrl.ifBlank { "(No configurada)" }}")
+                        if (uiState.testResult.httpCode != null) {
+                            appendLine("• Código HTTP: ${uiState.testResult.httpCode}")
+                        }
+                        appendLine("• Latencia: ${uiState.testResult.latencyMs} ms")
+                        if (!uiState.testResult.errorMessage.isNullOrBlank()) {
+                            appendLine("• Error: ${uiState.testResult.errorMessage}")
+                        }
+                        if (!uiState.testResult.responseBody.isNullOrBlank()) {
+                            appendLine("• Respuesta Servidor:")
+                            appendLine(uiState.testResult.responseBody)
+                        }
+                    }
+                }
+
                 Card(
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = if (uiState.testResult.isSuccess) {
+                        containerColor = if (isSuccess) {
                             StatusSuccess.copy(alpha = 0.15f)
                         } else {
                             StatusFailed.copy(alpha = 0.15f)
@@ -491,7 +517,7 @@ fun DashboardScreen(
                         .padding(horizontal = 16.dp, vertical = 6.dp)
                         .border(
                             1.dp,
-                            if (uiState.testResult.isSuccess) StatusSuccess.copy(alpha = 0.4f) else StatusFailed.copy(alpha = 0.4f),
+                            if (isSuccess) StatusSuccess.copy(alpha = 0.4f) else StatusFailed.copy(alpha = 0.4f),
                             RoundedCornerShape(14.dp)
                         )
                 ) {
@@ -500,22 +526,22 @@ fun DashboardScreen(
                         modifier = Modifier.padding(12.dp)
                     ) {
                         Icon(
-                            imageVector = if (uiState.testResult.isSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
+                            imageVector = if (isSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
                             contentDescription = null,
-                            tint = if (uiState.testResult.isSuccess) StatusSuccess else StatusFailed,
+                            tint = if (isSuccess) StatusSuccess else StatusFailed,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = if (uiState.testResult.isSuccess) {
+                                text = if (isSuccess) {
                                     "¡Conexión FastAPI Exitosa! (HTTP ${uiState.testResult.httpCode} - ${uiState.testResult.latencyMs}ms)"
                                 } else {
                                     "No se pudo conectar: ${uiState.testResult.errorMessage}"
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Bold,
-                                color = if (uiState.testResult.isSuccess) StatusSuccess else StatusFailed
+                                color = if (isSuccess) StatusSuccess else StatusFailed
                             )
                             Text(
                                 text = "Destino: ${uiState.webhookUrl}",
@@ -523,6 +549,29 @@ fun DashboardScreen(
                                 color = Color.White.copy(alpha = 0.7f)
                             )
                         }
+
+                        if (!isSuccess) {
+                            IconButton(
+                                onClick = {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    val clip = ClipData.newPlainText("Error FastAPI", errorReport)
+                                    clipboard.setPrimaryClip(clip)
+                                    Toast.makeText(context, "Error copiado para pasarle al dev", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .testTag("dashboard_copy_error_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = "Copiar error",
+                                    tint = Color.White.copy(alpha = 0.85f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                        }
+
                         IconButton(
                             onClick = onDismissTestResult,
                             modifier = Modifier.size(28.dp)
